@@ -4,39 +4,68 @@ import os
 
 STATE_FILE = "state.json"
 
-# ---- Paramètres ----
-DROP_THRESHOLD = 0.05          # -5%
-REARM_THRESHOLD = 0.02         # réarme si on repasse au-dessus de -2% (anti-spam)
-# Tu peux ajuster REARM_THRESHOLD selon ton goût
+# ---- PARAMÈTRES STRATÉGIE ----
+DROP_THRESHOLD = 0.05     # -5 %
+REARM_THRESHOLD = 0.02    # réarmement si la baisse < -2 %
+RSI_PERIOD = 14
+RSI_THRESHOLD = 40        # RSI 4H max pour autoriser une alerte
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# ---- COINGECKO ----
 PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
-PARAMS = {"ids": "ethereum", "vs_currencies": "usd"}
+PRICE_PARAMS = {"ids": "ethereum", "vs_currencies": "usd"}
+
+OHLC_URL = "https://api.coingecko.com/api/v3/coins/ethereum/ohlc"
+OHLC_PARAMS = {"vs_currency": "usd", "days": 14}
 
 
+# ---------- UTILITAIRES ----------
 def get_price():
-    r = requests.get(PRICE_URL, params=PARAMS, timeout=10)
+    r = requests.get(PRICE_URL, params=PRICE_PARAMS, timeout=10)
     r.raise_for_status()
     return float(r.json()["ethereum"]["usd"])
 
 
-def send_telegram(message: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELELEGRAM_CHAT_ID, "text": message}
-    r = requests.post(url, json=payload, timeout=10)
+def get_rsi_4h(period=14):
+    r = requests.get(OHLC_URL, params=OHLC_PARAMS, timeout=10)
     r.raise_for_status()
+    ohlc = r.json()
+
+    closes = [candle[4] for candle in ohlc]  # close prices
+
+    if len(closes) < period + 1:
+        return None
+
+    gains, losses = [], []
+    for i in range(1, period + 1):
+        delta = closes[-i] - closes[-i - 1]
+        if delta >= 0:
+            gains.append(delta)
+        else:
+            losses.append(abs(delta))
+
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period if losses else 0.00001
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return round(rsi, 2)
+
+
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    r = requests.post(url, json=payload, timeout=10)
+    print("Telegram:", r.status_code, r.text)
 
 
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
             return json.load(f)
-    return {
-        "reference_price": None,  # prix de référence pour calculer la baisse
-        "alerted": False          # a-t-on déjà notifié pour la baisse en cours ?
-    }
+    return {"reference_price": None, "alerted": False}
 
 
 def save_state(state):
@@ -44,60 +73,57 @@ def save_state(state):
         json.dump(state, f)
 
 
+# ---------- LOGIQUE PRINCIPALE ----------
 def main():
     state = load_state()
 
     price = get_price()
+    rsi_4h = get_rsi_4h()
 
-    # Init référence au premier run
+    print(f"Prix actuel : {price}")
+    print(f"RSI 4H : {rsi_4h}")
+
+    # Init
     if state["reference_price"] is None:
         state["reference_price"] = price
         state["alerted"] = False
         save_state(state)
-        print(f"Init reference_price={price}")
+        print("Init state.")
         return
 
     reference = state["reference_price"]
-    drop = (reference - price) / reference  # ex: 0.05 = -5%
+    drop = (reference - price) / reference
 
     print(f"Référence : {reference}")
-    print(f"Prix actuel : {price}")
     print(f"Baisse : {drop*100:.2f}%")
     print(f"Alerted : {state['alerted']}")
 
-    # 1) Condition de baisse déclenchante
-    if drop >= DROP_THRESHOLD:
-        if not state["alerted"]:
-            msg = (
-                "🚨 Alerte baisse ETH\n"
-                f"Prix: {price} USD\n"
-                f"Baisse: {drop*100:.2f}%\n"
-                f"Réf: {reference}"
-            )
-            # Envoie 1 seule fois
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-            resp = requests.post(url, json=payload, timeout=10)
-            print("Telegram:", resp.status_code, resp.text)
+    # ---- CONDITION D'ALERTE ----
+    if (
+        drop >= DROP_THRESHOLD
+        and rsi_4h is not None
+        and rsi_4h <= RSI_THRESHOLD
+        and not state["alerted"]
+    ):
+        send_telegram(
+            "🚨 SETUP ETH VALIDE\n"
+            f"Prix : {price} USD\n"
+            f"Baisse : {drop*100:.2f}%\n"
+            f"RSI 4H : {rsi_4h}"
+        )
+        state["alerted"] = True
+        save_state(state)
+        return
 
-            state["alerted"] = True
-            save_state(state)
-        else:
-            print("Déjà alerté pour cette baisse -> pas de nouvelle notif.")
-
-    # 2) Réarmement quand la baisse n'est plus là (ou beaucoup moins forte)
-    # Ici on réarme si la baisse redevient < 2% (REARM_THRESHOLD)
-    elif drop < REARM_THRESHOLD:
-        # On réarme + on met à jour le prix de référence au niveau actuel
-        # (comme ça une nouvelle baisse repartira de ce nouveau niveau)
-        if state["alerted"]:
-            print("Réarmement (la baisse est retombée) -> alerted=False")
+    # ---- RÉARMEMENT ----
+    if drop < REARM_THRESHOLD:
         state["alerted"] = False
         state["reference_price"] = price
         save_state(state)
-    else:
-        # zone intermédiaire: pas assez bas pour alerter, pas assez haut pour réarmer
-        save_state(state)
+        print("Réarmement effectué.")
+        return
+
+    save_state(state)
 
 
 if __name__ == "__main__":
