@@ -53,7 +53,9 @@ def send_telegram(message):
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message
     }
-    requests.post(url, json=payload, timeout=10)
+    r = requests.post(url, json=payload, timeout=10)
+    print("STATUS CODE:", r.status_code)
+    print("RESPONSE:", r.text)
 
 
 send_telegram("✅ Test Telegram OK – script alert.py existant")
