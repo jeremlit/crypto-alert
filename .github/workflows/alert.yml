@@ -2,8 +2,8 @@ name: ETH Alert Telegram
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
+    - cron: "*/5 * * * *"   # toutes les 5 minutes (UTC)
+  workflow_dispatch:        # lancement manuel possible
 
 jobs:
   run-alert:
@@ -26,6 +26,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install requests
+
+      - name: Timestamp (UTC)
+        run: date -u
 
       - name: Run alert script
         env:
