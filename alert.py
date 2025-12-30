@@ -3,16 +3,19 @@ import json
 import os
 
 STATE_FILE = "state.json"
-SYMBOL = "ETHUSDT"
 DROP_THRESHOLD = 0.05
 
-# API publique Binance (sans client officiel)
-URL = f"https://api.binance.com/api/v3/ticker/price?symbol={SYMBOL}"
+# CoinGecko API
+URL = "https://api.coingecko.com/api/v3/simple/price"
+PARAMS = {
+    "ids": "ethereum",
+    "vs_currencies": "usd"
+}
 
 def get_price():
-    response = requests.get(URL, timeout=10)
+    response = requests.get(URL, params=PARAMS, timeout=10)
     response.raise_for_status()
-    return float(response.json()["price"])
+    return float(response.json()["ethereum"]["usd"])
 
 # Charger l'état précédent
 if os.path.exists(STATE_FILE):
