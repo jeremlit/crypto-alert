@@ -5,6 +5,10 @@ import os
 STATE_FILE = "state.json"
 DROP_THRESHOLD = 0.05
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+
 # CoinGecko API
 URL = "https://api.coingecko.com/api/v3/simple/price"
 PARAMS = {
@@ -39,3 +43,12 @@ if drop >= DROP_THRESHOLD:
 # Sauvegarder l'état
 with open(STATE_FILE, "w") as f:
     json.dump({"reference_price": reference_price}, f)
+
+
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+    requests.post(url, json=payload, timeout=10)
