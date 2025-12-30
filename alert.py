@@ -44,6 +44,8 @@ if drop >= DROP_THRESHOLD:
 with open(STATE_FILE, "w") as f:
     json.dump({"reference_price": reference_price}, f)
 
+send_telegram("✅ Test Telegram OK – script alert.py existant")
+
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
