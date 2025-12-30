@@ -9,6 +9,9 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
+print("TOKEN PRESENT :", TELEGRAM_TOKEN is not None)
+print("CHAT_ID :", TELEGRAM_CHAT_ID)
+
 # CoinGecko API
 URL = "https://api.coingecko.com/api/v3/simple/price"
 PARAMS = {
