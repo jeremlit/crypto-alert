@@ -2,7 +2,7 @@ name: ETH Alert Telegram
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # toutes les 5 minutes (UTC)
+    - cron: "*/5 * * * *"   # toutes les 5 minutes (UTC) - JL
   workflow_dispatch:        # lancement manuel possible
 
 jobs:
